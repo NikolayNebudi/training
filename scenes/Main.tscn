@@ -1,0 +1,55 @@
+[gd_scene format=3 uid="uid://cn6lki8kbw828"]
+
+[ext_resource type="Texture2D" uid="uid://r4lgfh5jhpra" path="res://textures/Background_tiles.png" id="1_rvslj"]
+[ext_resource type="Texture2D" uid="uid://ctx3n3brcjv8t" path="res://textures/SolidWalls.png" id="1_solidwalls"]
+[ext_resource type="Script" uid="uid://ckvopguv2ln0e" path="res://MapGenerator.cs" id="2_0bbpv"]
+[ext_resource type="Texture2D" uid="uid://slect80y6uel" path="res://player_sprites/player.png" id="3_0bbpv"]
+[ext_resource type="Script" uid="uid://bdlp0oi10cx36" path="res://scenes/Player.cs" id="3_rarhs"]
+
+[sub_resource type="TileSetAtlasSource" id="TileSetAtlasSource_rarhs"]
+texture = ExtResource("1_rvslj")
+texture_region_size = Vector2i(128, 128)
+use_texture_padding = false
+1:0/0 = 0
+0:0/0 = 0
+2:0/0 = 0
+
+[sub_resource type="TileSetAtlasSource" id="TileSetAtlasSource_solidwalls"]
+texture = ExtResource("1_solidwalls")
+texture_region_size = Vector2i(128, 128)
+use_texture_padding = false
+0:0/0 = 0
+
+[sub_resource type="TileSet" id="TileSet_vcsgt"]
+sources/0 = SubResource("TileSetAtlasSource_rarhs")
+sources/1 = SubResource("TileSetAtlasSource_solidwalls")
+
+[sub_resource type="RectangleShape2D" id="RectangleShape2D_rarhs"]
+size = Vector2(64, 64)
+
+[node name="Main" type="Node2D" unique_id=1418928788]
+
+[node name="MapGenerator" type="TileMapLayer" parent="." unique_id=598931088]
+z_index = -5
+tile_set = SubResource("TileSet_vcsgt")
+collision_enabled = false
+script = ExtResource("2_0bbpv")
+Player = NodePath("../Player")
+SolidWalls = NodePath("../SolidWalls")
+
+[node name="SolidWalls" type="TileMapLayer" parent="." unique_id=598931089]
+z_index = -4
+tile_set = SubResource("TileSet_vcsgt")
+
+[node name="Player" type="CharacterBody2D" parent="." unique_id=2095495273]
+z_index = 1
+script = ExtResource("3_rarhs")
+
+[node name="Sprite2D" type="Sprite2D" parent="Player" unique_id=1564955621]
+texture = ExtResource("3_0bbpv")
+
+[node name="CollisionShape2D" type="CollisionShape2D" parent="Player" unique_id=1664567393]
+scale = Vector2(2, 2)
+shape = SubResource("RectangleShape2D_rarhs")
+
+[node name="Camera2D" type="Camera2D" parent="Player" unique_id=1229030121]
