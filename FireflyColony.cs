@@ -60,11 +60,18 @@ public partial class FireflyColony : Node2D
     [Export(PropertyHint.Range, "1,10,1")] public int CrystalSeedRadius = 3;
 
     [ExportGroup("Flocking")]
-    [Export(PropertyHint.Range, "0,1000,5")] public float FlockRadius = 220f;
-    [Export(PropertyHint.Range, "0,200,1")] public float SeparationRadius = 36f;
-    [Export(PropertyHint.Range, "0,2,0.05")] public float CohesionStrength = 0.20f;
-    [Export(PropertyHint.Range, "0,2,0.05")] public float AlignmentStrength = 0.30f;
-    [Export(PropertyHint.Range, "0,2,0.05")] public float SeparationStrength = 0.45f;
+    /// <summary>Меньший радиус → меньше слипаний в общую кучу. 140 — около
+    /// одной тайловой клетки, ровно для «дружной стайки 3-5 особей».</summary>
+    [Export(PropertyHint.Range, "0,1000,5")] public float FlockRadius = 140f;
+    [Export(PropertyHint.Range, "0,200,1")] public float SeparationRadius = 42f;
+    /// <summary>Слабая cohesion. Раньше 0.20 тащила всех в центроид группы,
+    /// и если центроид попадал за стену — стая упиралась в неё и стояла.</summary>
+    [Export(PropertyHint.Range, "0,2,0.05")] public float CohesionStrength = 0.08f;
+    [Export(PropertyHint.Range, "0,2,0.05")] public float AlignmentStrength = 0.25f;
+    [Export(PropertyHint.Range, "0,2,0.05")] public float SeparationStrength = 0.55f;
+    /// <summary>Сила «отворачивания от стены» в формуле флокинга. Считается
+    /// по 5×5 окрестности клеток — сумма направлений в открытые клетки.</summary>
+    [Export(PropertyHint.Range, "0,3,0.05")] public float WallAvoidanceStrength = 0.50f;
 
     [ExportGroup("Reproduction")]
     [Export(PropertyHint.Range, "0,1,0.01")] public float BreedAgeMinFraction = 0.25f;
@@ -466,6 +473,11 @@ public partial class FireflyColony : Node2D
     {
         if (_count >= MaxPopulation) return;
 
+        // Финальная защита: если pos оказался в стене (например, breed
+        // не нашёл валидной точки) — просто откажем в спавне, чем родить
+        // муравья-фантома, проваливающегося сквозь геометрию.
+        if (_w > 0 && IsCellBlocked(WorldToCell(pos))) return;
+
         ref Firefly f = ref _fireflies[_count];
         f.Position = pos;
         f.WanderAngle = _rng.RandfRange(0f, Mathf.Tau);
@@ -497,11 +509,14 @@ public partial class FireflyColony : Node2D
         {
             ref Firefly f = ref _fireflies[i];
 
+            // На клетке с мхом — почти стоим, чтобы реально успеть выесть.
+            // Раньше летели транзитом и брали 1-2 укуса, мох успевал восстать.
+            float effectiveSpeed = f.State == 2 ? Speed * 0.18f : Speed;
+
             // Плавное случайное «колебание» направления.
             f.WanderAngle += _rng.RandfRange(-WanderTurnRate, WanderTurnRate) * dt;
 
-            // Реакция на игрока (легкое отталкивание).
-            Vector2 desiredVel = new Vector2(Mathf.Cos(f.WanderAngle), Mathf.Sin(f.WanderAngle)) * Speed;
+            Vector2 desiredVel = new Vector2(Mathf.Cos(f.WanderAngle), Mathf.Sin(f.WanderAngle)) * effectiveSpeed;
             if (Player != null)
             {
                 Vector2 fromPlayer = f.Position - Player.GlobalPosition;
@@ -706,18 +721,53 @@ public partial class FireflyColony : Node2D
             neighborCount++;
         }
 
-        if (neighborCount == 0) return;
+        // Wall avoidance — независимая компонента, действует ВСЕГДА (даже без
+        // соседей). Иначе одинокий светлячок может надолго упереться в угол.
+        Vector2 wallAvoid = ComputeWallAvoidance(f.Position);
 
-        cohesion = cohesion / neighborCount - f.Position;
-        alignment = alignment / neighborCount - f.Velocity;
+        Vector2 force = wallAvoid * WallAvoidanceStrength;
+        if (neighborCount > 0)
+        {
+            cohesion = cohesion / neighborCount - f.Position;
+            alignment = alignment / neighborCount - f.Velocity;
 
-        Vector2 force = cohesion.Normalized() * CohesionStrength
-                      + alignment.Normalized() * AlignmentStrength
-                      + (separationCount > 0 ? separation.Normalized() * SeparationStrength : Vector2.Zero);
+            force += cohesion.Normalized() * CohesionStrength
+                   + alignment.Normalized() * AlignmentStrength
+                   + (separationCount > 0 ? separation.Normalized() * SeparationStrength : Vector2.Zero);
+        }
+
+        if (force.LengthSquared() < 0.0001f) return;
 
         // Сдвиг wander angle под действием силы.
         Vector2 newDir = (new Vector2(Mathf.Cos(f.WanderAngle), Mathf.Sin(f.WanderAngle)) + force * 0.3f).Normalized();
         f.WanderAngle = Mathf.Atan2(newDir.Y, newDir.X);
+    }
+
+    /// <summary>Возвращает направление «прочь от стен» — сумма единичных
+    /// векторов в открытые клетки в окрестности 5×5. Если все клетки
+    /// открыты — нулевой вектор (нечего избегать).</summary>
+    private Vector2 ComputeWallAvoidance(Vector2 pos)
+    {
+        var center = WorldToCell(pos);
+        Vector2 sum = Vector2.Zero;
+        int blockedCount = 0;
+        for (int dy = -2; dy <= 2; dy++)
+        {
+            for (int dx = -2; dx <= 2; dx++)
+            {
+                if (dx == 0 && dy == 0) continue;
+                var c = new Vector2I(center.X + dx, center.Y + dy);
+                if (IsCellBlocked(c))
+                {
+                    // Вектор ОТ стены, веса по обратному квадрату.
+                    float dSq = dx * dx + dy * dy;
+                    sum -= new Vector2(dx, dy) / dSq;
+                    blockedCount++;
+                }
+            }
+        }
+        if (blockedCount == 0) return Vector2.Zero;
+        return sum.Normalized();
     }
 
     private void TryReproductionPass()
@@ -750,9 +800,24 @@ public partial class FireflyColony : Node2D
             }
             if (partner < 0) continue;
 
-            // Дети!
-            Vector2 spawnPos = (f.Position + _fireflies[partner].Position) * 0.5f;
-            spawnPos += new Vector2(_rng.RandfRange(-12f, 12f), _rng.RandfRange(-12f, 12f));
+            // Дети! Тщательно выбираем точку рождения: сначала midpoint,
+            // если он в стене (пара по разные стороны тонкой перегородки) —
+            // пробуем позицию каждого родителя, потом несколько случайных
+            // отступов. Без этой проверки новорождённый мог появиться
+            // внутри стены и «провалиться» сквозь неё на первом шаге.
+            Vector2 mid = (f.Position + _fireflies[partner].Position) * 0.5f;
+            Vector2[] candidates = {
+                mid + new Vector2(_rng.RandfRange(-12f, 12f), _rng.RandfRange(-12f, 12f)),
+                f.Position,
+                _fireflies[partner].Position,
+                f.Position + new Vector2(_rng.RandfRange(-24f, 24f), _rng.RandfRange(-24f, 24f)),
+            };
+            Vector2 spawnPos = f.Position;     // безопасный fallback
+            foreach (var p in candidates)
+            {
+                if (!IsCellBlocked(WorldToCell(p))) { spawnPos = p; break; }
+            }
+
             f.Hunger -= BreedHungerCost;
             _fireflies[partner].Hunger -= BreedHungerCost;
             SpawnFirefly(spawnPos, BIRTH_BREED);
