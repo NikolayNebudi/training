@@ -2,7 +2,10 @@
 
 [ext_resource type="Texture2D" uid="uid://r4lgfh5jhpra" path="res://textures/Background_tiles.png" id="1_rvslj"]
 [ext_resource type="Texture2D" uid="uid://ctx3n3brcjv8t" path="res://textures/SolidWalls.png" id="1_solidwalls"]
+[ext_resource type="Texture2D" uid="uid://dkthpcqvk0oxf" path="res://textures/Rock_tile.png" id="1_rocks"]
 [ext_resource type="Script" uid="uid://ckvopguv2ln0e" path="res://MapGenerator.cs" id="2_0bbpv"]
+[ext_resource type="Script" path="res://RockField.cs" id="2_rocks"]
+[ext_resource type="Script" path="res://DynamicOccluders.cs" id="2_occluders"]
 [ext_resource type="Texture2D" uid="uid://slect80y6uel" path="res://player_sprites/player.png" id="3_0bbpv"]
 [ext_resource type="Script" uid="uid://bdlp0oi10cx36" path="res://scenes/Player.cs" id="3_rarhs"]
 
@@ -19,21 +22,52 @@ texture = ExtResource("1_solidwalls")
 texture_region_size = Vector2i(128, 128)
 use_texture_padding = false
 0:0/0 = 0
+0:0/0/physics_layer_0/polygon_0/points = PackedVector2Array(-64, -64, 64, -64, 64, 64, -64, 64)
+
+[sub_resource type="TileSetAtlasSource" id="TileSetAtlasSource_rocks"]
+texture = ExtResource("1_rocks")
+texture_region_size = Vector2i(128, 128)
+use_texture_padding = true
+0:0/0 = 0
+0:0/0/physics_layer_1/polygon_0/points = PackedVector2Array(-64, -64, 64, -64, 64, 64, -64, 64)
 
 [sub_resource type="TileSet" id="TileSet_vcsgt"]
+tile_size = Vector2i(128, 128)
+physics_layer_0/collision_layer = 1
+physics_layer_0/collision_mask = 0
+physics_layer_1/collision_layer = 2
+physics_layer_1/collision_mask = 0
 sources/0 = SubResource("TileSetAtlasSource_rarhs")
 sources/1 = SubResource("TileSetAtlasSource_solidwalls")
+sources/2 = SubResource("TileSetAtlasSource_rocks")
 
 [sub_resource type="RectangleShape2D" id="RectangleShape2D_rarhs"]
-size = Vector2(64, 64)
+size = Vector2(80, 80)
+
+[sub_resource type="Gradient" id="Gradient_playerlight"]
+offsets = PackedFloat32Array(0, 0.55, 1)
+colors = PackedColorArray(1, 1, 1, 1, 1, 0.9, 0.65, 0.6, 0, 0, 0, 0)
+
+[sub_resource type="GradientTexture2D" id="GradientTexture2D_playerlight"]
+gradient = SubResource("Gradient_playerlight")
+width = 512
+height = 512
+fill = 1
+fill_from = Vector2(0.5, 0.5)
+fill_to = Vector2(1, 0.5)
 
 [node name="Main" type="Node2D" unique_id=1418928788]
+
+[node name="WorldLighting" type="CanvasModulate" parent="." unique_id=1418928789]
+color = Color(0.5, 0.52, 0.6, 1)
 
 [node name="MapGenerator" type="TileMapLayer" parent="." unique_id=598931088]
 z_index = -5
 tile_set = SubResource("TileSet_vcsgt")
 collision_enabled = false
 script = ExtResource("2_0bbpv")
+Width = 800
+Height = 800
 Player = NodePath("../Player")
 SolidWalls = NodePath("../SolidWalls")
 
@@ -41,15 +75,54 @@ SolidWalls = NodePath("../SolidWalls")
 z_index = -4
 tile_set = SubResource("TileSet_vcsgt")
 
+[node name="Rocks" type="TileMapLayer" parent="." unique_id=598931090]
+z_index = -3
+tile_set = SubResource("TileSet_vcsgt")
+script = ExtResource("2_rocks")
+Map = NodePath("../MapGenerator")
+Player = NodePath("../Player")
+
+[node name="DynamicOccluders" type="Node2D" parent="." unique_id=598931091]
+script = ExtResource("2_occluders")
+Target = NodePath("../Player")
+Rocks = NodePath("../Rocks")
+SolidWalls = NodePath("../SolidWalls")
+
 [node name="Player" type="CharacterBody2D" parent="." unique_id=2095495273]
 z_index = 1
+collision_mask = 3
 script = ExtResource("3_rarhs")
+Rocks = NodePath("../Rocks")
 
 [node name="Sprite2D" type="Sprite2D" parent="Player" unique_id=1564955621]
+scale = Vector2(0.625, 0.625)
 texture = ExtResource("3_0bbpv")
 
 [node name="CollisionShape2D" type="CollisionShape2D" parent="Player" unique_id=1664567393]
-scale = Vector2(2, 2)
 shape = SubResource("RectangleShape2D_rarhs")
 
+[node name="PlayerLight" type="PointLight2D" parent="Player" unique_id=1229030122]
+energy = 1.6
+shadow_enabled = true
+shadow_color = Color(0, 0, 0, 0.75)
+shadow_filter = 1
+shadow_filter_smooth = 1.5
+texture = SubResource("GradientTexture2D_playerlight")
+texture_scale = 3.0
+color = Color(1, 0.92, 0.78, 1)
+
 [node name="Camera2D" type="Camera2D" parent="Player" unique_id=1229030121]
+zoom = Vector2(0.9, 0.9)
+limit_left = 0
+limit_top = 0
+limit_right = 102400
+limit_bottom = 102400
+position_smoothing_enabled = true
+position_smoothing_speed = 4.0
+rotation_smoothing_enabled = true
+drag_horizontal_enabled = true
+drag_vertical_enabled = true
+drag_left_margin = 0.2
+drag_right_margin = 0.2
+drag_top_margin = 0.2
+drag_bottom_margin = 0.2
