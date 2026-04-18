@@ -214,8 +214,7 @@ public partial class CrystalField : Node2D
 
     private void CreateVisual()
     {
-        _growthImage = Image.CreateFromData(_w, _h, false, Image.Format.L8, _growth);
-        _growthTexture = ImageTexture.CreateFromImage(_growthImage);
+        (_growthImage, _growthTexture) = WorldGrid.MakeL8Texture(_w, _h, _growth);
 
         _visual = new Sprite2D
         {
@@ -237,11 +236,7 @@ public partial class CrystalField : Node2D
     }
 
     private void UpdateGrowthTexture()
-    {
-        if (_growthImage == null || _growthTexture == null) return;
-        _growthImage.SetData(_w, _h, false, Image.Format.L8, _growth);
-        _growthTexture.Update(_growthImage);
-    }
+        => WorldGrid.UpdateL8Texture(_growthImage, _growthTexture, _w, _h, _growth);
 
     // ---- Physical collision for mature crystals ------------------------
 

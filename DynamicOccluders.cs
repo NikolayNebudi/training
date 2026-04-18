@@ -94,6 +94,9 @@ public partial class DynamicOccluders : Node2D
 
     private bool IsObstacle(Vector2I cell)
     {
+        // Здесь не нужна OOB-защита (Refresh ходит вокруг игрока, не уйдёт
+        // в бесконечность) и не нужен учёт кристаллов — они не загораживают
+        // свет, а сами должны светиться.
         if (Rocks != null && Rocks.HasRock(cell)) return true;
         if (SolidWalls != null && SolidWalls.GetCellSourceId(cell) >= 0) return true;
         return false;

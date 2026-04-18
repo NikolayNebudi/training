@@ -189,11 +189,7 @@ public partial class MossField : Node2D
     }
 
     private void UpdateObstacleTexture()
-    {
-        if (_obstacleImage == null || _obstacleTexture == null) return;
-        _obstacleImage.SetData(_w, _h, false, Image.Format.L8, _obstacle);
-        _obstacleTexture.Update(_obstacleImage);
-    }
+        => WorldGrid.UpdateL8Texture(_obstacleImage, _obstacleTexture, _w, _h, _obstacle);
 
     // ---- Public API -----------------------------------------------------
 
@@ -440,6 +436,10 @@ public partial class MossField : Node2D
         float coverage = _capCells > 0 ? (float)_activeCells / _capCells : 1f;
         float coverageFactor = Mathf.Clamp(1f - coverage, 0f, 1f);
 
+        // Инкрементально обновляем _activeCells вместо полного rescan'а
+        // в конце тика (640k байт каждые 2.5 сек — лишнее).
+        int activeDelta = 0;
+
         for (int idx = 0; idx < _density.Length; idx++)
         {
             int d = _density[idx];
@@ -459,7 +459,11 @@ public partial class MossField : Node2D
 
             d = Mathf.Clamp(d, 0, 255);
             _density[idx] = (byte)d;
-            if (d == 0) continue;
+            if (d == 0)
+            {
+                activeDelta--;     // клетка высохла полностью
+                continue;
+            }
 
             if (_rng.Randf() < SpreadChance * w * coverageFactor)
             {
@@ -482,6 +486,7 @@ public partial class MossField : Node2D
                             if (nw > DrynessThreshold * 0.5f)
                             {
                                 _density[nidx] = (byte)_rng.RandiRange(15, 35);
+                                activeDelta++;     // распространились в новую клетку
                             }
                         }
                     }
@@ -489,10 +494,8 @@ public partial class MossField : Node2D
             }
         }
 
-        int newActive = 0;
-        for (int i = 0; i < _density.Length; i++)
-            if (_density[i] > 0) newActive++;
-        _activeCells = newActive;
+        _activeCells += activeDelta;
+        if (_activeCells < 0) _activeCells = 0;
     }
 
     private bool CanHaveMoss(Vector2I cell)
@@ -537,17 +540,10 @@ public partial class MossField : Node2D
 
     private void CreateVisual()
     {
-        _densityImage = Image.CreateFromData(_w, _h, false, Image.Format.L8, _density);
-        _densityTexture = ImageTexture.CreateFromImage(_densityImage);
-
-        _wetnessImage = Image.CreateFromData(_w, _h, false, Image.Format.L8, _wetness);
-        _wetnessTexture = ImageTexture.CreateFromImage(_wetnessImage);
-
-        _obstacleImage = Image.CreateFromData(_w, _h, false, Image.Format.L8, _obstacle);
-        _obstacleTexture = ImageTexture.CreateFromImage(_obstacleImage);
-
-        _corrosionImage = Image.CreateFromData(_w, _h, false, Image.Format.L8, _corrosion);
-        _corrosionTexture = ImageTexture.CreateFromImage(_corrosionImage);
+        (_densityImage,   _densityTexture)   = WorldGrid.MakeL8Texture(_w, _h, _density);
+        (_wetnessImage,   _wetnessTexture)   = WorldGrid.MakeL8Texture(_w, _h, _wetness);
+        (_obstacleImage,  _obstacleTexture)  = WorldGrid.MakeL8Texture(_w, _h, _obstacle);
+        (_corrosionImage, _corrosionTexture) = WorldGrid.MakeL8Texture(_w, _h, _corrosion);
 
         // Слой 1a: «коррозия камня» (blend_mul). Рендерится ПОД wetness и мхом,
         // но ПОВЕРХ Rocks — выветренные камни смотрятся темнее/желтее.
@@ -607,11 +603,7 @@ public partial class MossField : Node2D
     }
 
     private void UpdateDensityTexture()
-    {
-        if (_densityImage == null || _densityTexture == null) return;
-        _densityImage.SetData(_w, _h, false, Image.Format.L8, _density);
-        _densityTexture.Update(_densityImage);
-    }
+        => WorldGrid.UpdateL8Texture(_densityImage, _densityTexture, _w, _h, _density);
 
     private static long Ms(ulong a, ulong b) => (long)((b - a) / 1000UL);
 }

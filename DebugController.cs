@@ -35,10 +35,6 @@ public partial class DebugController : Node2D
             PlayerCamera = Player.GetNodeOrNull<Camera2D>("Camera2D");
 
         if (PlayerCamera != null) PlayerCamera.MakeCurrent();
-
-        GD.Print($"DebugController ready. Player={Player?.Name}, " +
-                 $"Fireflies={Fireflies?.Name}, Worms={Worms?.Name}, " +
-                 $"DebugCamera={DebugCamera?.Name}, PlayerCamera={PlayerCamera?.Name}");
     }
 
     public override void _Input(InputEvent @event)
@@ -66,27 +62,17 @@ public partial class DebugController : Node2D
         {
             if (Fireflies != null
                 && Fireflies.TryFindNearestFirefly(DebugCamera.GlobalPosition, 999999f, out var pos))
-            {
                 DebugCamera.GlobalPosition = DebugCamera.GlobalPosition.Lerp(pos, CameraFollowSpeed);
-            }
             else
-            {
-                GD.Print("DebugController: светлячков нет, возврат к игроку.");
                 SetModePlayer();
-            }
         }
         else if (_mode == MODE_WORM)
         {
             if (Worms != null
                 && Worms.TryFindNearestWormHead(DebugCamera.GlobalPosition, out var pos))
-            {
                 DebugCamera.GlobalPosition = DebugCamera.GlobalPosition.Lerp(pos, CameraFollowSpeed);
-            }
             else
-            {
-                GD.Print("DebugController: червей нет, возврат к игроку.");
                 SetModePlayer();
-            }
         }
     }
 
@@ -94,34 +80,23 @@ public partial class DebugController : Node2D
     {
         _mode = MODE_PLAYER;
         if (PlayerCamera != null) PlayerCamera.MakeCurrent();
-        GD.Print("DebugController: камера → игрок.");
     }
 
     private void SetModeFirefly()
     {
         if (Fireflies == null || Player == null || DebugCamera == null) return;
-        if (!Fireflies.TryFindNearestFirefly(Player.GlobalPosition, 999999f, out var pos))
-        {
-            GD.Print("DebugController: нет светлячков для слежения.");
-            return;
-        }
+        if (!Fireflies.TryFindNearestFirefly(Player.GlobalPosition, 999999f, out var pos)) return;
         _mode = MODE_FIREFLY;
         DebugCamera.GlobalPosition = pos;
         DebugCamera.MakeCurrent();
-        GD.Print($"DebugController: камера → ближайший светлячок ({pos}).");
     }
 
     private void SetModeWorm()
     {
         if (Worms == null || DebugCamera == null) return;
-        if (!Worms.TryFindRandomWormHead(out var pos))
-        {
-            GD.Print("DebugController: нет червей для слежения.");
-            return;
-        }
+        if (!Worms.TryFindRandomWormHead(out var pos)) return;
         _mode = MODE_WORM;
         DebugCamera.GlobalPosition = pos;
         DebugCamera.MakeCurrent();
-        GD.Print($"DebugController: камера → случайный червь ({pos}).");
     }
 }

@@ -388,22 +388,34 @@ public partial class FireflyColony : Node2D
         int nearTarget = Mathf.Min(InitialNearPlayerCount, InitialPopulation);
         int spawnedNear = SpawnFirefliesNearCenter(nearTarget, InitialNearPlayerRadius);
 
-        // Потом — обычный разброс по всей карте.
+        // Дальше — разброс по всей карте с поэтапным ослаблением требования
+        // к мху. Это гарантирует, что светлячки появляются и в сухих биомах
+        // (где мха нет совсем), а не только в сырых пещерах. Отдельные
+        // светлячки потом расселятся естественно через breed/replenish.
         int remaining = InitialPopulation - spawnedNear;
-        int spawned = 0;
-        int attempts = 0;
-        int maxAttempts = remaining * 80;
-        while (spawned < remaining && attempts++ < maxAttempts)
-        {
-            int cx = _rng.RandiRange(0, _w - 1);
-            int cy = _rng.RandiRange(0, _h - 1);
-            var cell = new Vector2I(cx, cy);
-            if (IsCellBlocked(cell)) continue;
-            if (Moss == null || Moss.GetDensity(cell) < 100) continue;
+        if (remaining <= 0) return;
 
-            Vector2 pos = CellToWorld(cell);
-            SpawnFirefly(pos, BIRTH_INITIAL);
-            spawned++;
+        // Тиры: чем глубже, тем шире принимаем клетки. Нулевой порог —
+        // последний шанс, любая открытая клетка во ВСЕЙ карте.
+        int[] mossThresholds = { 100, 50, 0 };
+        int totalSpawned = 0;
+        foreach (int thr in mossThresholds)
+        {
+            if (totalSpawned >= remaining) break;
+            int need = remaining - totalSpawned;
+            int attempts = 0;
+            int maxAttempts = need * 200;
+            while (totalSpawned < remaining && attempts++ < maxAttempts)
+            {
+                int cx = _rng.RandiRange(0, _w - 1);
+                int cy = _rng.RandiRange(0, _h - 1);
+                var cell = new Vector2I(cx, cy);
+                if (IsCellBlocked(cell)) continue;
+                if (thr > 0 && (Moss == null || Moss.GetDensity(cell) < thr)) continue;
+
+                SpawnFirefly(CellToWorld(cell), BIRTH_INITIAL);
+                totalSpawned++;
+            }
         }
     }
 
@@ -840,20 +852,8 @@ public partial class FireflyColony : Node2D
     }
 
     private bool IsCellBlocked(Vector2I cell)
-    {
-        // Out-of-bounds = blocked. Стены рамки только в x=-1 и x=Width;
-        // дальше пустота, и без этой защиты светлячки могут вылететь
-        // в OOB и больше не вернуться.
-        if (cell.X < 0 || cell.X >= _w || cell.Y < 0 || cell.Y >= _h) return true;
-        if (Rocks != null && Rocks.HasRock(cell)) return true;
-        if (SolidWalls != null && SolidWalls.GetCellSourceId(cell) >= 0) return true;
-        if (Crystals != null && Crystals.IsMature(cell)) return true;
-        return false;
-    }
+        => WorldGrid.IsBlocked(cell, _w, _h, Rocks, SolidWalls, Crystals);
 
-    private Vector2I WorldToCell(Vector2 pos)
-        => new Vector2I((int)Mathf.Floor(pos.X / _tilePx), (int)Mathf.Floor(pos.Y / _tilePx));
-
-    private Vector2 CellToWorld(Vector2I cell)
-        => new Vector2(cell.X * _tilePx + _tilePx * 0.5f, cell.Y * _tilePx + _tilePx * 0.5f);
+    private Vector2I WorldToCell(Vector2 pos) => WorldGrid.WorldToCell(pos, _tilePx);
+    private Vector2 CellToWorld(Vector2I cell) => WorldGrid.CellToWorld(cell, _tilePx);
 }

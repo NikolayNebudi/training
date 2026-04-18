@@ -18,11 +18,18 @@ public partial class MushroomField : Node2D
 
     [ExportGroup("Spawning")]
     /// <summary>Желаемое количество грибов на карте.</summary>
-    [Export(PropertyHint.Range, "0,5000,10")] public int TargetCount = 800;
-    /// <summary>Кластеризация — низкая частота → большие «биомы грибов».</summary>
-    [Export(PropertyHint.Range, "0.005,0.1,0.001")] public float ClusterFrequency = 0.022f;
+    [Export(PropertyHint.Range, "0,5000,10")] public int TargetCount = 1500;
+    /// <summary>Кластеризация — низкая частота → большие «биомы грибов».
+    /// Меньшее значение = реже разбросанные крупные пятна; большее = чаще,
+    /// но мельче — даёт грибы во всех пещерах, без «мёртвых зон».</summary>
+    [Export(PropertyHint.Range, "0.005,0.2,0.001")] public float ClusterFrequency = 0.06f;
     /// <summary>Порог шума для появления гриба. Выше = реже, кучнее.</summary>
-    [Export(PropertyHint.Range, "0.0,1.0,0.01")] public float ClusterThreshold = 0.42f;
+    [Export(PropertyHint.Range, "0.0,1.0,0.01")] public float ClusterThreshold = 0.20f;
+    /// <summary>Какая доля TargetCount гарантированно расселяется
+    /// «разбрасыванием» по любой стене любой пещеры (без шумового гейта).
+    /// Это ловит большие открытые залы, в которые не попал ни один холм
+    /// шума. 0 = только кластеры, 1 = только разброс.</summary>
+    [Export(PropertyHint.Range, "0.0,1.0,0.05")] public float ScatterFraction = 0.35f;
     /// <summary>Сколько разных цветов в палитре (1..6).</summary>
     [Export(PropertyHint.Range, "1,6,1")] public int PaletteSize = 6;
 
@@ -93,10 +100,26 @@ public partial class MushroomField : Node2D
             Seed = (int)(_rng.Randi() & 0x7FFFFFFF),
         };
 
+        int scatterTarget = (int)(TargetCount * Mathf.Clamp(ScatterFraction, 0f, 1f));
+        int clusterTarget = TargetCount - scatterTarget;
+
+        // Проход 1 — кластерный: даёт «биомы», концентрации в шумовых холмах.
+        int placedCluster = SpawnPass(clusterTarget, useNoiseGate: true, noise);
+        // Проход 2 — разброс: гарантирует представителей в каждой пещере,
+        // даже там, куда не попал ни один холм шума (большие открытые залы).
+        int placedScatter = SpawnPass(scatterTarget, useNoiseGate: false, noise);
+
+        GD.Print($"MushroomField: кластеры={placedCluster}, разброс={placedScatter}.");
+    }
+
+    private int SpawnPass(int target, bool useNoiseGate, FastNoiseLite noise)
+    {
+        if (target <= 0) return 0;
+
         int placed = 0;
         int attempts = 0;
-        int maxAttempts = TargetCount * 60;
-        while (placed < TargetCount && attempts++ < maxAttempts)
+        int maxAttempts = target * 80;
+        while (placed < target && attempts++ < maxAttempts)
         {
             int x = _rng.RandiRange(2, _w - 3);
             int y = _rng.RandiRange(2, _h - 3);
@@ -105,22 +128,22 @@ public partial class MushroomField : Node2D
 
             var cell = new Vector2I(x, y);
 
-            // Должна быть открытой клеткой (пол).
             if (Rocks != null && Rocks.HasRock(cell)) continue;
             if (SolidWalls != null && SolidWalls.GetCellSourceId(cell) >= 0) continue;
 
-            // Должен быть хотя бы один каменный сосед — гриб «растёт» на стене.
             if (!HasRockNeighbor(cell)) continue;
 
-            // Кластеризация: только если в шумовом холме.
-            float n = (noise.GetNoise2D(x, y) + 1f) * 0.5f;
-            if (n < ClusterThreshold) continue;
+            if (useNoiseGate)
+            {
+                float n = (noise.GetNoise2D(x, y) + 1f) * 0.5f;
+                if (n < ClusterThreshold) continue;
+            }
 
-            // Цвет палитры: индекс 1..PaletteSize.
             byte color = (byte)_rng.RandiRange(1, Mathf.Clamp(PaletteSize, 1, 6));
             _grid[idx] = color;
             placed++;
         }
+        return placed;
     }
 
     private bool HasRockNeighbor(Vector2I cell)
@@ -141,8 +164,7 @@ public partial class MushroomField : Node2D
 
     private void CreateVisual()
     {
-        _image = Image.CreateFromData(_w, _h, false, Image.Format.L8, _grid);
-        _texture = ImageTexture.CreateFromImage(_image);
+        (_image, _texture) = WorldGrid.MakeL8Texture(_w, _h, _grid);
 
         _visual = new Sprite2D
         {
@@ -164,9 +186,5 @@ public partial class MushroomField : Node2D
     }
 
     private void UpdateTexture()
-    {
-        if (_image == null || _texture == null) return;
-        _image.SetData(_w, _h, false, Image.Format.L8, _grid);
-        _texture.Update(_image);
-    }
+        => WorldGrid.UpdateL8Texture(_image, _texture, _w, _h, _grid);
 }

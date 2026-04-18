@@ -811,18 +811,8 @@ public partial class WormColony : Node2D
     }
 
     private bool IsCellBlocked(Vector2I cell)
-    {
-        // OOB = blocked.
-        if (cell.X < 0 || cell.X >= _w || cell.Y < 0 || cell.Y >= _h) return true;
-        if (Rocks != null && Rocks.HasRock(cell)) return true;
-        if (SolidWalls != null && SolidWalls.GetCellSourceId(cell) >= 0) return true;
-        if (Crystals != null && Crystals.IsMature(cell)) return true;
-        return false;
-    }
+        => WorldGrid.IsBlocked(cell, _w, _h, Rocks, SolidWalls, Crystals);
 
-    private Vector2I WorldToCell(Vector2 pos)
-        => new Vector2I((int)Mathf.Floor(pos.X / _tilePx), (int)Mathf.Floor(pos.Y / _tilePx));
-
-    private Vector2 CellToWorld(Vector2I cell)
-        => new Vector2(cell.X * _tilePx + _tilePx * 0.5f, cell.Y * _tilePx + _tilePx * 0.5f);
+    private Vector2I WorldToCell(Vector2 pos) => WorldGrid.WorldToCell(pos, _tilePx);
+    private Vector2 CellToWorld(Vector2I cell) => WorldGrid.CellToWorld(cell, _tilePx);
 }

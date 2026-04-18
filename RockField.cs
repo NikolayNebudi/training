@@ -86,6 +86,12 @@ public partial class RockField : TileMapLayer
     private int _paintIdx;
     private bool _painting;
 
+    // Кэш для CountRocks(). StatsPanel дёргает каждые 0.2с — без кэша
+    // линейный скан 640k байт делается заново каждый раз. Инвалидация
+    // через Damage() (минус 1 за каждое разрушение) и через сигнал
+    // RocksGenerated (полный пересчёт после генерации).
+    private int _rockCountCache = -1;
+
     private RandomNumberGenerator _audioRng;
 
     public override void _Ready()
@@ -140,12 +146,16 @@ public partial class RockField : TileMapLayer
     public int Height => _h;
     public int TotalCells => (_hp?.Length) ?? 0;
 
-    /// <summary>Текущее количество каменных клеток. Линейный скан 640k байт ≈ 0.5 мс.</summary>
+    /// <summary>Текущее количество каменных клеток. Кэшируется и
+    /// инкрементально обновляется на разрушении; полный пересчёт делается
+    /// только лениво при первом вызове после генерации.</summary>
     public int CountRocks()
     {
         if (_hp == null) return 0;
+        if (_rockCountCache >= 0) return _rockCountCache;
         int n = 0;
         for (int i = 0; i < _hp.Length; i++) if (_hp[i] > 0) n++;
+        _rockCountCache = n;
         return n;
     }
 
@@ -172,6 +182,7 @@ public partial class RockField : TileMapLayer
         if (hp <= 0)
         {
             _hp[idx] = 0;
+            if (_rockCountCache > 0) _rockCountCache--;
             EraseCell(cell);
             PlayDestroyAudio(cell);
             EmitSignal(SignalName.RockDestroyed, cell);
@@ -209,6 +220,7 @@ public partial class RockField : TileMapLayer
         }
 
         _hp = new byte[_w * _h];
+        _rockCountCache = -1;
 
         ulong t0 = Time.GetTicksUsec();
 
@@ -233,6 +245,8 @@ public partial class RockField : TileMapLayer
         int mainSize = regions.Count > 0 ? regions[0].Count : 0;
         int rockCells = 0;
         foreach (byte b in _hp) if (b > 0) rockCells++;
+        // Прайм кэш: только что просчитали — сохраним.
+        _rockCountCache = rockCells;
         float rockPct = 100f * rockCells / _hp.Length;
         GD.Print($"RockField: noise={Ms(t0,t1)} мс, CA={Ms(t1,t2)} мс, " +
                  $"flood={Ms(t2,t3)} мс ({regions.Count} регионов, главная={mainSize}), " +
