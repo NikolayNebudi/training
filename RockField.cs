@@ -52,6 +52,11 @@ public partial class RockField : TileMapLayer
     [ExportGroup("Health")]
     [Export(PropertyHint.Range, "1,255,1")] public int RockMaxHp = 100;
 
+    [ExportGroup("Audio")]
+    [Export] public AudioStreamPlayer2D DestroyAudio;
+    [Export(PropertyHint.Range, "0.5,2.0,0.01")] public float DestroyPitchMin = 0.92f;
+    [Export(PropertyHint.Range, "0.5,2.0,0.01")] public float DestroyPitchMax = 1.08f;
+
     [ExportGroup("Painting")]
     [Export(PropertyHint.Range, "1024,500000,1024")] public int CellsPerFrame = 30000;
 
@@ -62,11 +67,17 @@ public partial class RockField : TileMapLayer
     private int _paintIdx;
     private bool _painting;
 
+    private RandomNumberGenerator _audioRng;
+
     public override void _Ready()
     {
+        _audioRng = new RandomNumberGenerator();
+        _audioRng.Randomize();
+
         Node parent = GetParent();
         if (Map == null && parent != null) Map = parent.GetNodeOrNull<MapGenerator>("MapGenerator");
         if (Player == null && parent != null) Player = parent.GetNodeOrNull<Node2D>("Player");
+        if (DestroyAudio == null) DestroyAudio = GetNodeOrNull<AudioStreamPlayer2D>("DestroyAudio");
 
         if (Map == null)
         {
@@ -130,6 +141,7 @@ public partial class RockField : TileMapLayer
         {
             _hp[idx] = 0;
             EraseCell(cell);
+            PlayDestroyAudio(cell);
             EmitSignal(SignalName.RockDestroyed, cell);
             return true;
         }
@@ -137,6 +149,14 @@ public partial class RockField : TileMapLayer
         _hp[idx] = (byte)hp;
         EmitSignal(SignalName.RockDamaged, cell, hp);
         return false;
+    }
+
+    private void PlayDestroyAudio(Vector2I cell)
+    {
+        if (DestroyAudio == null || DestroyAudio.Stream == null) return;
+        DestroyAudio.GlobalPosition = ToGlobal(MapToLocal(cell));
+        DestroyAudio.PitchScale = _audioRng.RandfRange(DestroyPitchMin, DestroyPitchMax);
+        DestroyAudio.Play();
     }
 
     // ---- Generation pipeline -------------------------------------------
