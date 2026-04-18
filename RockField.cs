@@ -33,8 +33,16 @@ public partial class RockField : TileMapLayer
     [Export(PropertyHint.Range, "0.0,1.0,0.01")] public float NoiseLowWeight = 0.65f;
 
     [ExportGroup("Generation - Cellular Automaton")]
-    [Export(PropertyHint.Range, "0,12,1")] public int CaIterations = 4;
-    [Export(PropertyHint.Range, "1,9,1")] public int CaWallNeighborMin = 4;
+    [Export(PropertyHint.Range, "0,12,1")] public int CaIterations = 3;
+    [Export(PropertyHint.Range, "1,9,1")] public int CaWallNeighborMin = 5;
+
+    [ExportGroup("Generation - Perlin caves (additional pass)")]
+    /// <summary>Доля камня, которую дополнительно вырубим Perlin-проходом.
+    /// 0 = никаких дополнительных пещер, 0.20 = ~20% оставшегося камня
+    /// превращается в полости. Формы органичные, не «пузырьки» CA.</summary>
+    [Export(PropertyHint.Range, "0,0.5,0.01")] public float PerlinCaveDensity = 0.15f;
+    /// <summary>Очень низкая частота → большие связные пещеры.</summary>
+    [Export(PropertyHint.Range, "0.001,0.05,0.001")] public float PerlinCaveFrequency = 0.005f;
 
     [ExportGroup("Generation - Connectivity")]
     /// <summary>Регионы меньше этого размера заливаются обратно камнем (визуальный мусор).</summary>
@@ -42,11 +50,22 @@ public partial class RockField : TileMapLayer
     /// <summary>Тоннели прокладываются ТОЛЬКО к регионам не меньше этого размера.
     /// Регионы между MinRegionSize и этим значением остаются как изолированные
     /// «секретные карманы» — их надо находить бурением.</summary>
-    [Export(PropertyHint.Range, "0,5000,1")] public int MinTunnelRegionSize = 200;
+    [Export(PropertyHint.Range, "0,5000,1")] public int MinTunnelRegionSize = 120;
     /// <summary>Если A* путь длиннее этого числа клеток — тоннель не строится.
     /// Регион остаётся изолированным.</summary>
-    [Export(PropertyHint.Range, "0,2000,1")] public int MaxTunnelLength = 100;
-    [Export(PropertyHint.Range, "0,5,1")] public int TunnelRadius = 0;
+    [Export(PropertyHint.Range, "0,2000,1")] public int MaxTunnelLength = 200;
+    /// <summary>Минимальный радиус тоннеля (1 = 3 клетки шириной).</summary>
+    [Export(PropertyHint.Range, "0,5,1")] public int TunnelMinRadius = 1;
+    /// <summary>Максимальный радиус тоннеля (2 = 5 клеток шириной).</summary>
+    [Export(PropertyHint.Range, "0,5,1")] public int TunnelMaxRadius = 2;
+    /// <summary>Сила «волнистости» тоннеля в клетках. 0 = прямой A*-путь.</summary>
+    [Export(PropertyHint.Range, "0,8,0.5")] public float TunnelMeanderStrength = 3.0f;
+    /// <summary>Частота шума для извилистости. Меньше = плавнее, реже волны.</summary>
+    [Export(PropertyHint.Range, "0.005,0.2,0.001")] public float TunnelMeanderFrequency = 0.04f;
+    /// <summary>Шанс на каждом шаге сделать «зал» (расширение).</summary>
+    [Export(PropertyHint.Range, "0,1,0.01")] public float TunnelChamberChance = 0.06f;
+    /// <summary>Радиус «зала» (в дополнение к базовому радиусу).</summary>
+    [Export(PropertyHint.Range, "1,8,1")] public int TunnelChamberExtraRadius = 3;
     [Export(PropertyHint.Range, "0,80,1")] public int PlayerClearingRadius = 5;
 
     [ExportGroup("Health")]
@@ -117,6 +136,19 @@ public partial class RockField : TileMapLayer
     public bool InBounds(Vector2I cell)
         => cell.X >= 0 && cell.X < _w && cell.Y >= 0 && cell.Y < _h;
 
+    public int Width => _w;
+    public int Height => _h;
+    public int TotalCells => (_hp?.Length) ?? 0;
+
+    /// <summary>Текущее количество каменных клеток. Линейный скан 640k байт ≈ 0.5 мс.</summary>
+    public int CountRocks()
+    {
+        if (_hp == null) return 0;
+        int n = 0;
+        for (int i = 0; i < _hp.Length; i++) if (_hp[i] > 0) n++;
+        return n;
+    }
+
     public bool HasRock(Vector2I cell)
         => InBounds(cell) && _hp[cell.Y * _w + cell.X] > 0;
 
@@ -184,6 +216,9 @@ public partial class RockField : TileMapLayer
         ulong t1 = Time.GetTicksUsec();
 
         ApplyCellularAutomaton();
+        ulong t1b = Time.GetTicksUsec();
+
+        AddPerlinCaves();
         ulong t2 = Time.GetTicksUsec();
 
         var regions = FindOpenRegions();
@@ -274,6 +309,49 @@ public partial class RockField : TileMapLayer
         if (!ReferenceEquals(current, _hp)) System.Array.Copy(current, _hp, current.Length);
     }
 
+    // -- B2. Дополнительные пещеры Perlin-шумом --
+    //
+    // CA даёт характерные «пузырьки» — органичные, но с похожими очертаниями.
+    // Низкочастотный Perlin даёт большие плавные «зоны» совершенно другой формы,
+    // что разнообразит ландшафт. Каменные клетки, попавшие в пик шума, становятся
+    // полостями. Дальше FindOpenRegions автоматически найдёт их как новые регионы,
+    // и ConnectRegions попытается прокинуть к ним тоннели.
+
+    private void AddPerlinCaves()
+    {
+        if (PerlinCaveDensity <= 0.001f) return;
+
+        var noise = new FastNoiseLite
+        {
+            NoiseType = FastNoiseLite.NoiseTypeEnum.SimplexSmooth,
+            Frequency = PerlinCaveFrequency,
+            Seed = (int)(MakeRng().Randi() & 0x7FFFFFFF),
+        };
+
+        // SimplexSmooth на низкой частоте даёт узкое распределение ≈ 0.2..0.8.
+        // Эмпирическая формула: density 0.10 → ~10%, 0.15 → ~15%, 0.20 → ~20%.
+        float threshold = Mathf.Clamp(0.78f - PerlinCaveDensity * 0.85f, 0.0f, 1.0f);
+
+        int carved = 0;
+        for (int y = 0; y < _h; y++)
+        {
+            int rowBase = y * _w;
+            for (int x = 0; x < _w; x++)
+            {
+                int idx = rowBase + x;
+                if (_hp[idx] == 0) continue;   // уже пустота
+
+                float n = (noise.GetNoise2D(x, y) + 1f) * 0.5f;
+                if (n > threshold)
+                {
+                    _hp[idx] = 0;
+                    carved++;
+                }
+            }
+        }
+        GD.Print($"RockField: Perlin-проход вырубил {carved} клеток ({100f * carved / _hp.Length:F1}%)");
+    }
+
     // -- C. Flood fill: open regions --
 
     private List<List<int>> FindOpenRegions()
@@ -355,7 +433,7 @@ public partial class RockField : TileMapLayer
                 continue;
             }
 
-            CarvePath(path, TunnelRadius);
+            CarvePath(path);
             _connectedCount++;
         }
     }
@@ -443,24 +521,77 @@ public partial class RockField : TileMapLayer
         return path;
     }
 
-    private void CarvePath(List<int> path, int radius)
+    /// <summary>
+    /// Вырезает тоннель по A*-пути с органическими модификациями:
+    ///   - Каждая точка пути смещается на низкочастотный noise → волнистая
+    ///     форма вместо прямого коридора.
+    ///   - Радиус варьируется по другому noise → ширина «дышит» от 1 до 5
+    ///     клеток вдоль пути.
+    ///   - С небольшим шансом возникают «залы» (расширенные карвы) — даёт
+    ///     природные пещерные комнаты в случайных местах тоннеля.
+    /// </summary>
+    private void CarvePath(List<int> path)
     {
-        foreach (int idx in path)
+        if (path.Count == 0) return;
+
+        var carveRng = MakeRng();
+        var meanderNoise = new FastNoiseLite
         {
+            NoiseType = FastNoiseLite.NoiseTypeEnum.SimplexSmooth,
+            Frequency = TunnelMeanderFrequency,
+            Seed = (int)(carveRng.Randi() & 0x7FFFFFFF),
+        };
+        var radiusNoise = new FastNoiseLite
+        {
+            NoiseType = FastNoiseLite.NoiseTypeEnum.SimplexSmooth,
+            Frequency = TunnelMeanderFrequency * 1.5f,
+            Seed = (int)(carveRng.Randi() & 0x7FFFFFFF),
+        };
+
+        int rmin = Mathf.Min(TunnelMinRadius, TunnelMaxRadius);
+        int rmax = Mathf.Max(TunnelMinRadius, TunnelMaxRadius);
+
+        for (int i = 0; i < path.Count; i++)
+        {
+            int idx = path[i];
             int cx = idx % _w;
             int cy = idx / _w;
-            for (int dy = -radius; dy <= radius; dy++)
+
+            // Смещение по двум независимым осям noise — даёт «петляющую» траекторию.
+            float n1 = meanderNoise.GetNoise2D(cx, cy);
+            float n2 = meanderNoise.GetNoise2D(cx + 113, cy + 257);
+            int dx = (int)Mathf.Round(n1 * TunnelMeanderStrength);
+            int dy = (int)Mathf.Round(n2 * TunnelMeanderStrength);
+
+            // Радиус интерполируется между min и max по своему noise.
+            float rt = (radiusNoise.GetNoise2D(cx, cy) + 1f) * 0.5f;
+            int radius = rmin + (int)Mathf.Round(rt * (rmax - rmin));
+
+            // Случайный «зал» — резко расширяемся в этой точке.
+            if (carveRng.Randf() < TunnelChamberChance)
             {
-                int ny = cy + dy;
-                if (ny < 0 || ny >= _h) continue;
-                int rowBase = ny * _w;
-                for (int dx = -radius; dx <= radius; dx++)
-                {
-                    int nx = cx + dx;
-                    if (nx < 0 || nx >= _w) continue;
-                    if (dx * dx + dy * dy > radius * radius) continue; // круглый тоннель
-                    _hp[rowBase + nx] = 0;
-                }
+                radius += TunnelChamberExtraRadius;
+            }
+
+            CarveCircle(cx + dx, cy + dy, radius);
+        }
+    }
+
+    private void CarveCircle(int cx, int cy, int radius)
+    {
+        if (radius < 0) radius = 0;
+        int r2 = radius * radius;
+        for (int ddy = -radius; ddy <= radius; ddy++)
+        {
+            int ny = cy + ddy;
+            if (ny < 0 || ny >= _h) continue;
+            int rowBase = ny * _w;
+            for (int ddx = -radius; ddx <= radius; ddx++)
+            {
+                int nx = cx + ddx;
+                if (nx < 0 || nx >= _w) continue;
+                if (ddx * ddx + ddy * ddy > r2) continue;
+                _hp[rowBase + nx] = 0;
             }
         }
     }

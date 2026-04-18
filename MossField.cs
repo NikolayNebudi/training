@@ -215,6 +215,10 @@ public partial class MossField : Node2D
         return _density[cell.Y * _w + cell.X];
     }
 
+    /// <summary>Текущее число клеток с мхом (для статистики).</summary>
+    public int ActiveCells => _activeCells;
+    public int TotalCells => _density?.Length ?? 0;
+
     /// <summary>Снимает <paramref name="amount"/> плотности мха в клетке.
     /// Возвращает реально съеденное количество (может быть меньше, если мха
     /// меньше). Используется светлячками при питании.</summary>

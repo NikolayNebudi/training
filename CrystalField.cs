@@ -26,6 +26,15 @@ public partial class CrystalField : Node2D
     [Export(PropertyHint.Range, "0.05,5.0,0.05")] public float TickInterval = 0.5f;
     /// <summary>Сколько единиц HP у зрелого кристалла (по умолчанию 6 ударов × 25 урона).</summary>
     [Export(PropertyHint.Range, "10,1000,5")] public int CrystalMaxHp = 150;
+    /// <summary>Cap на одновременное количество кристаллов на карте (растущие + зрелые).
+    /// Когда достигается, новые семена не сажаются. Регулятор перенаселения.</summary>
+    [Export(PropertyHint.Range, "10,5000,10")] public int MaxConcurrent = 100;
+
+    [ExportGroup("Collision")]
+    /// <summary>Bit-value коллижн-слоя для зрелых кристаллов. По умолчанию 4
+    /// (= 3-й слой). Стены = 1, камни = 2, кристаллы = 4. Player.collision_mask
+    /// должен быть 7 (1+2+4) чтобы блокировать всё.</summary>
+    [Export(PropertyHint.Range, "1,2147483647,1")] public uint CrystalCollisionLayer = 4;
 
     [ExportGroup("Visual")]
     [Export(PropertyHint.Range, "-10,10,1")] public int VisualZIndex = 0;
@@ -44,6 +53,13 @@ public partial class CrystalField : Node2D
 
     private List<int> _growingIndices = new();   // index'ы клеток с растущими (быстрый Tick)
     private HashSet<int> _matureIndices = new(); // index'ы зрелых
+    private Dictionary<int, StaticBody2D> _matureBodies = new(); // физика для зрелых
+
+    public int SeededTotal { get; private set; }
+    public int MaturedTotal { get; private set; }
+    public int DestroyedTotal { get; private set; }
+    public int CurrentGrowing => _growingIndices.Count;
+    public int CurrentMature => _matureIndices.Count;
 
     public override void _Ready()
     {
@@ -124,11 +140,14 @@ public partial class CrystalField : Node2D
     public bool TrySeed(Vector2I cell)
     {
         if (!_ready || !CanSeedAt(cell)) return false;
+        // Cap на одновременные кристаллы — иначе вся карта в кристаллах.
+        if (_growingIndices.Count + _matureIndices.Count >= MaxConcurrent) return false;
 
         int idx = cell.Y * _w + cell.X;
         _growth[idx] = 1;
         _growingIndices.Add(idx);
         _dirty = true;
+        SeededTotal++;
         EmitSignal(SignalName.CrystalSeeded, cell);
         return true;
     }
@@ -147,7 +166,9 @@ public partial class CrystalField : Node2D
             _growth[idx] = 0;
             _hp.Remove(idx);
             _matureIndices.Remove(idx);
+            RemoveCollisionBody(idx);
             _dirty = true;
+            DestroyedTotal++;
             EmitSignal(SignalName.CrystalDestroyed, cell);
             return true;
         }
@@ -174,9 +195,11 @@ public partial class CrystalField : Node2D
                 _growingIndices.RemoveAt(i);
                 _matureIndices.Add(idx);
                 _hp[idx] = CrystalMaxHp;
+                MaturedTotal++;
 
                 int x = idx % _w;
                 int y = idx / _w;
+                SpawnCollisionBody(new Vector2I(x, y), idx);
                 EmitSignal(SignalName.CrystalMatured, new Vector2I(x, y));
             }
             else
@@ -218,5 +241,36 @@ public partial class CrystalField : Node2D
         if (_growthImage == null || _growthTexture == null) return;
         _growthImage.SetData(_w, _h, false, Image.Format.L8, _growth);
         _growthTexture.Update(_growthImage);
+    }
+
+    // ---- Physical collision for mature crystals ------------------------
+
+    private void SpawnCollisionBody(Vector2I cell, int idx)
+    {
+        if (_matureBodies.ContainsKey(idx)) return;
+
+        var body = new StaticBody2D
+        {
+            CollisionLayer = CrystalCollisionLayer,
+            CollisionMask = 0,
+            Position = new Vector2(cell.X * _tilePx + _tilePx * 0.5f,
+                                   cell.Y * _tilePx + _tilePx * 0.5f),
+        };
+        var shape = new CollisionShape2D
+        {
+            Shape = new RectangleShape2D { Size = new Vector2(_tilePx, _tilePx) },
+        };
+        body.AddChild(shape);
+        AddChild(body);
+        _matureBodies[idx] = body;
+    }
+
+    private void RemoveCollisionBody(int idx)
+    {
+        if (_matureBodies.TryGetValue(idx, out var body))
+        {
+            body.QueueFree();
+            _matureBodies.Remove(idx);
+        }
     }
 }
