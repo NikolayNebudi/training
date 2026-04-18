@@ -38,6 +38,7 @@ public partial class MapGenerator : TileMapLayer
 
     public override void _Process(double _delta)
     {
+        if (!SimMode.ShouldProcess) return;
         if (_floor is not { IsRunning: true }) return;
 
         _floor.Step(CellsPerFrame);
@@ -58,7 +59,17 @@ public partial class MapGenerator : TileMapLayer
 
         // Игрок появляется в центре сразу, не дожидаясь прорисовки.
         PlacePlayerAtMapCenter();
-        // И вокруг него мгновенно красим небольшое окно, чтобы не висеть в пустоте.
+
+        // Headless-режим: пол не рисуется (TileMap-данные не нужны для
+        // симуляции). Сразу финишируем — пусть подписчики берут данные
+        // прямо сейчас. Defer делает это после _Ready всех соседей.
+        if (SimMode.Headless)
+        {
+            CallDeferred(MethodName.FinishGeneration);
+            return;
+        }
+
+        // И вокруг игрока мгновенно красим небольшое окно, чтобы не висеть в пустоте.
         PaintAreaImmediately(caGrid, floorCoords, Width / 2, Height / 2, PlayerSafeRadius);
 
         _floor = new FloorPainter(this, SourceId, Width, Height, floorCoords, caGrid);

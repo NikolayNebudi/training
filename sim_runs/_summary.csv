@@ -1,0 +1,17 @@
+scenario,ff_peak,ff_final,ff_mean,ff_min,ff_died_hunger,ff_died_predator,worm_peak,worm_final,worm_killed_ff,worm_cells_dug,crystal_mature_final,crystal_seeded,crystal_destroyed,rock_pct_final,moss_pct_final,mushroom_count
+00_baseline,50,4,11.4,3,64,2,6,1,2,0,100,100,0,70.2,3.0,500
+gen_dense_rock,50,7,11.9,4,69,3,6,2,3,0,100,100,0,85.9,2.2,500
+gen_sparse_rock,50,7,12.0,4,63,1,6,2,1,0,100,100,0,48.9,5.0,500
+gen_more_perlin,50,9,12.0,3,51,4,6,2,4,0,100,100,0,61.4,3.8,500
+gen_no_perlin,51,6,7.0,0,78,0,6,2,0,0,39,39,0,83.6,1.8,500
+ff_hunger_low,55,8,13.8,4,63,4,6,1,4,0,100,100,0,74.4,3.4,500
+ff_hunger_high,50,4,7.3,2,88,2,6,2,2,0,87,90,0,75.5,2.4,500
+ff_short_life,71,6,14.0,3,83,3,6,0,3,0,100,100,0,71.3,3.8,500
+ff_long_life,50,5,8.9,1,83,0,6,2,0,0,91,91,0,77.1,2.3,500
+ff_more_breed,53,11,14.7,5,72,10,6,2,10,0,100,100,0,70.5,3.6,500
+worm_hunger_low,50,7,10.1,3,60,8,6,2,8,0,100,100,0,73.3,2.8,500
+worm_hunger_high,72,5,16.6,3,118,4,6,2,4,0,100,100,0,69.0,4.0,500
+worm_hunt_short,52,7,9.9,4,77,2,6,1,2,0,100,100,0,73.8,2.7,500
+worm_hunt_long,50,7,13.0,4,70,3,6,2,3,0,100,100,0,71.8,3.5,500
+crystal_slow,53,6,12.9,3,89,2,6,2,2,0,71,72,0,71.6,3.2,500
+crystal_fast,50,2,9.6,2,85,3,6,0,3,0,100,100,0,78.5,2.4,500

@@ -114,6 +114,7 @@ public partial class RockField : TileMapLayer
 
     public override void _Process(double _delta)
     {
+        if (!SimMode.ShouldProcess) return;
         if (!_painting) return;
 
         int total = _w * _h;
@@ -253,6 +254,13 @@ public partial class RockField : TileMapLayer
                  $"tunnels={Ms(t3,t4)} мс (соединено={_connectedCount}, " +
                  $"скрытых_карманов={_skippedSmall}, далеко={_skippedFar}), " +
                  $"clearing={Ms(t4,t5)} мс. Камня {rockPct:F1}%.");
+
+        // Headless: тайлы не рисуем, источник истины — _hp[]. Шлём готовность сразу.
+        if (SimMode.Headless)
+        {
+            EmitSignal(SignalName.RocksGenerated);
+            return;
+        }
 
         _paintIdx = 0;
         _painting = true;

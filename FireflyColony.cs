@@ -210,9 +210,9 @@ public partial class FireflyColony : Node2D
         _h = Map.Height;
         if (Map.TileSet != null) _tilePx = Map.TileSet.TileSize.X;
 
-        CreateRenderer();
+        if (!SimMode.Headless) CreateRenderer();
         SpawnInitialFireflies();
-        UpdateRenderInstances();
+        if (!SimMode.Headless) UpdateRenderInstances();
 
         GD.Print($"FireflyColony: запущено {_count} светлячков.");
         _ready = true;
@@ -222,6 +222,7 @@ public partial class FireflyColony : Node2D
     public override void _Process(double delta)
     {
         if (!_ready) return;
+        if (!SimMode.ShouldProcess) return;
         // Кап dt: при больших фризах (например, при первом нажатии 1) dt
         // может выйти на 0.5+ сек. Без капа светлячки за кадр пролетают
         // несколько клеток и перепрыгивают стены. С капом симуляция чуть
@@ -258,7 +259,7 @@ public partial class FireflyColony : Node2D
             TryMossBirths();
         }
 
-        UpdateRenderInstances();
+        if (!SimMode.Headless) UpdateRenderInstances();
     }
 
     /// <summary>«Споры» в густом мхе — изредка рождают нового светлячка.

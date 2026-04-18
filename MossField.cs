@@ -142,8 +142,11 @@ public partial class MossField : Node2D
         NoiseSeedMoss();
         ulong t2 = Time.GetTicksUsec();
 
-        CreateVisual();
-        UpdateDensityTexture();
+        if (!SimMode.Headless)
+        {
+            CreateVisual();
+            UpdateDensityTexture();
+        }
         _textureDirty = false;
 
         GD.Print($"MossField: maps={Ms(t0,t1)} мс, noise-seed={Ms(t1,t2)} мс, " +
@@ -163,6 +166,7 @@ public partial class MossField : Node2D
     public override void _Process(double delta)
     {
         if (!_ready) return;
+        if (!SimMode.ShouldProcess) return;
 
         ApplyTrample((float)delta);
 

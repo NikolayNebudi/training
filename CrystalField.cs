@@ -87,7 +87,7 @@ public partial class CrystalField : Node2D
 
         _growth = new byte[_w * _h];
 
-        CreateVisual();
+        if (!SimMode.Headless) CreateVisual();
 
         _ready = true;
         SetProcess(true);
@@ -96,6 +96,7 @@ public partial class CrystalField : Node2D
     public override void _Process(double delta)
     {
         if (!_ready) return;
+        if (!SimMode.ShouldProcess) return;
 
         _tickAccum += (float)delta;
         if (_tickAccum >= TickInterval)
@@ -242,6 +243,7 @@ public partial class CrystalField : Node2D
 
     private void SpawnCollisionBody(Vector2I cell, int idx)
     {
+        if (SimMode.Headless) return;     // нет физики в симуляции
         if (_matureBodies.ContainsKey(idx)) return;
 
         var body = new StaticBody2D

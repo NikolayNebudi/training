@@ -216,9 +216,9 @@ public partial class WormColony : Node2D
         _h = Map.Height;
         if (Map.TileSet != null) _tilePx = Map.TileSet.TileSize.X;
 
-        CreateRenderer();
+        if (!SimMode.Headless) CreateRenderer();
         SpawnInitialWorms();
-        UpdateRenderInstances();
+        if (!SimMode.Headless) UpdateRenderInstances();
 
         GD.Print($"WormColony: запущено {_count} червей.");
         _ready = true;
@@ -228,6 +228,7 @@ public partial class WormColony : Node2D
     public override void _Process(double delta)
     {
         if (!_ready) return;
+        if (!SimMode.ShouldProcess) return;
         // Кап dt, как у светлячков — чтоб при больших фризах червь не
         // прыгнул через стену.
         float dt = Mathf.Min((float)delta, 0.05f);
@@ -248,7 +249,7 @@ public partial class WormColony : Node2D
             TryReplenish();
         }
 
-        UpdateRenderInstances();
+        if (!SimMode.Headless) UpdateRenderInstances();
     }
 
     /// <summary>Гарантия от вымирания: если популяция ниже MinPopulation —

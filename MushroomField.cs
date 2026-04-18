@@ -125,8 +125,11 @@ public partial class MushroomField : Node2D
         ScatterAcrossRegions(regions);
         ulong t2 = Time.GetTicksUsec();
 
-        CreateRenderer();
-        UpdateInstances();
+        if (!SimMode.Headless)
+        {
+            CreateRenderer();
+            UpdateInstances();
+        }
 
         GD.Print($"MushroomField: flood-fill={Ms(t0,t1)} мс ({regions.Count} регионов), " +
                  $"scatter={Ms(t1,t2)} мс, грибов={_count}.");
